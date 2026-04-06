@@ -1,0 +1,120 @@
+% Appendix B: Theoretical Analysis of Cross-Attention Design
+% For MoM-Driver NeurIPS 2026 Paper (Compressed Version)
+
+\section{Theoretical Analysis of Cross-Attention Design}
+\label{appendix:cross_attention}
+
+This appendix analyzes our State-Frozen cross-attention mechanism compared to Linear Interpolation Cross-Attention (LICA) used in prior work~\cite{lady}. \textbf{This analysis is not claimed as a main contribution}, but demonstrates our theoretical understanding of cross-attention design choices.
+
+\subsection{Problem Setup}
+
+In multi-modal linear attention, cross-attention between queries $\mathbf{Q} \in \mathbb{R}^{N_q \times d}$ and key-values $\{\mathbf{K}, \mathbf{V}\} \in \mathbb{R}^{N_{kv} \times d}$ is typically implemented via \textbf{concatenation}:
+
+\begin{enumerate}
+    \item \textbf{LICA approach}: $\mathbf{X} = [\mathbf{K}; \mathbf{V}; \mathbf{Q}] \rightarrow \text{LinearAttn}(\mathbf{X}) \rightarrow \text{extract queries}$
+    \item \textbf{State-Frozen approach}: Prevent query tokens from updating recurrent state
+\end{enumerate}
+
+For RWKV-style recurrence: $\mathbf{S}_t = \lambda \mathbf{S}_{t-1} + \mathbf{k}_t \mathbf{v}_t^\top$, $\mathbf{o}_t = \mathbf{q}_t \mathbf{S}_t$
+
+\subsection{Systematic Biases in LICA}
+
+\subsubsection{Bias 1: Positional Decay ($\varepsilon_{decay}$)}
+
+\begin{theorem}[Positional Decay Bias]
+In LICA, visual information at position $i$ is attenuated by $\lambda^{N_q}$ when accessed by query tokens, where $N_q$ is the number of queries.
+\end{theorem}
+
+\begin{proof}[Proof Sketch]
+Visual token $(\mathbf{k}_i, \mathbf{v}_i)$ processed at position $i < N_{kv}$ contributes to query $\mathbf{q}_j$ at position $j = N_{kv} + \delta$:
+\begin{align}
+\mathbf{o}_j^{(i)} &= \mathbf{q}_j (\lambda^{\delta} \mathbf{k}_i \mathbf{v}_i^\top) = \lambda^{\delta} (\mathbf{q}_j \mathbf{k}_i) \mathbf{v}_i
+\end{align}
+
+The decay factor $\lambda^{\delta}$ artificially suppresses visual information. For typical values $\lambda = 0.9$, $N_q = 64$:
+$$\varepsilon_{decay} = 1 - \lambda^{64} \approx 0.9998$$
+
+This means visual information is almost entirely suppressed!
+\end{proof}
+
+\subsubsection{Bias 2: Query Contamination ($\varepsilon_{contam}$)}
+
+\begin{theorem}[Query Contamination Bias]
+In LICA, later queries read state contaminated by earlier queries, violating cross-attention semantics.
+\end{theorem}
+
+\begin{proof}[Proof Sketch]
+Query $\mathbf{q}_j$ updates state: $\mathbf{S}_j = \lambda \mathbf{S}_{j-1} + \mathbf{k}_j \mathbf{v}_j^\top$
+
+Later query $\mathbf{q}_{j+1}$ reads contaminated state:
+$$\mathbf{o}_{j+1} = \mathbf{q}_{j+1} \mathbf{S}_{j+1} = \mathbf{q}_{j+1}(\lambda \mathbf{S}_j + \mathbf{k}_{j+1} \mathbf{v}_{j+1}^\top)$$
+
+The contamination term $\lambda (\mathbf{q}_{j+1} \mathbf{k}_j) \mathbf{v}_j$ means queries influence each other's outputs.
+\end{proof}
+
+\subsection{State-Frozen Solution}
+
+\begin{definition}[State-Frozen Cross-Attention]
+For query positions $t \geq N_{kv}$:
+\begin{align}
+\text{State:} \quad &\mathbf{S}_t = \mathbf{S}_{t-1} \quad \text{(frozen, no update)} \\
+\text{Output:} \quad &\mathbf{o}_t = \mathbf{q}_t \mathbf{S}_t \quad \text{(normal read)}
+\end{align}
+\end{definition}
+
+\begin{theorem}[Bias Elimination]
+State-Frozen eliminates both biases: $\varepsilon_{decay} = 0$ and $\varepsilon_{contam} = 0$.
+\end{theorem}
+
+\begin{proof}
+\textbf{No decay}: State remains $\mathbf{S}_{N_{kv}}$ for all queries, eliminating positional decay.
+
+\textbf{No contamination}: Each query reads identical pure visual state $\mathbf{S}_{N_{kv}}$:
+$$\mathbf{o}_j = \mathbf{q}_j \mathbf{S}_{N_{kv}} = \mathbf{q}_j \left(\sum_{i=1}^{N_{kv}} \lambda^{N_{kv}-i} \mathbf{k}_i \mathbf{v}_i^\top \right)$$
+\end{proof}
+
+\subsection{Empirical Observations}
+
+Despite theoretical biases, LADY achieves PDMS = 90.9 with LICA, suggesting:
+\begin{itemize}
+    \item \textbf{Network compensation}: Deep networks may adapt parameters to counteract biases
+    \item \textbf{Task robustness}: Some driving scenarios may tolerate attention artifacts
+    \item \textbf{Implicit regularization}: Biases might act as beneficial constraints
+\end{itemize}
+
+\subsection{Implementation}
+
+In our MoM blocks, State-Frozen is controlled via \texttt{frozen\_from} parameter:
+
+\begin{verbatim}
+# LICA baseline
+frozen_from = -1  # No freezing, standard behavior
+
+# State-Frozen (our approach)  
+frozen_from = kv_len  # Freeze state updates from query positions
+\end{verbatim}
+
+\textbf{Computational cost}: Identical to LICA ($O(N_{total} \cdot d^2)$), only state update logic differs.
+
+\subsection{Connection to Standard Cross-Attention}
+
+\begin{theorem}[Transformer Equivalence]
+With $\lambda = 1$ and infinite precision, State-Frozen recovers standard Transformer cross-attention (without softmax).
+\end{theorem}
+
+\begin{proof}
+$$\mathbf{o}_j = \mathbf{q}_j \left(\sum_{i=1}^{N_{kv}} \mathbf{k}_i \mathbf{v}_i^\top \right) = \sum_{i=1}^{N_{kv}} (\mathbf{q}_j^\top \mathbf{k}_i) \mathbf{v}_i$$
+
+This matches linear attention approximation of Transformer cross-attention.
+\end{proof}
+
+\subsection{Key Insights}
+
+\begin{itemize}
+    \item \textbf{LICA introduces systematic biases} that can be quantified ($\varepsilon_{decay} \approx 0.9998$ for typical parameters)
+    \item \textbf{State-Frozen provides principled bias elimination} while maintaining efficiency
+    \item \textbf{Both approaches work in practice}, demonstrating robustness of deep learning
+    \item \textbf{Design choice depends on priorities}: theoretical soundness vs. empirical optimization
+\end{itemize}
+
+While we implement State-Frozen for theoretical rigor, we acknowledge both formulations can be effective depending on task requirements and network capacity for bias compensation.

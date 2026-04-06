@@ -1,0 +1,33 @@
+_target_: navsim.agents.MoM_driver.mom_agent.MoMAgent
+_convert_: 'all'
+
+config:
+  _target_: navsim.agents.MoM_driver.mom_config.MoMConfig
+  _convert_: 'all'
+
+  trajectory_sampling:
+    _target_: nuplan.planning.simulation.trajectory.trajectory_sampling.TrajectorySampling
+    _convert_: 'all'
+    time_horizon: 4
+    interval_length: 0.5
+
+  # DINOv2+LoRA weights
+  image_backbone_model_weights: weights/vit_small_patch14_reg4_dinov2.lvd142m/model.safetensors
+
+  # MoM temporal fusion block config
+  mom_temporal:
+    _target_: navsim.agents.MoM_driver.mom_config.MoMBlockConfig
+    _convert_: 'all'
+
+  # MoM decoder block config
+  mom_decoder:
+    _target_: navsim.agents.MoM_driver.mom_config.MoMBlockConfig
+    _convert_: 'all'
+
+  # Scorer options
+  double_score: false
+  agent_pred: false
+  area_pred: false
+
+checkpoint_path: null
+lr: 1e-4
