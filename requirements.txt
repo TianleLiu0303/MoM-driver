@@ -1,7 +1,6 @@
 nuplan-devkit @ git+https://github.com/motional/nuplan-devkit/@nuplan-devkit-v1.2
 scikit-learn==1.2.2
 positional-encodings==6.0.1
-flash-linear-attention @ git+https://github.com/fla-org/flash-linear-attention
 
 # nuplan requirements
 aioboto3
@@ -19,7 +18,7 @@ nest_asyncio  # Used to nest event loops when running nuBoard/jupyter
 numpy==1.23.4
 opencv-python==4.9.0.80  # Used widely
 pandas    # Used widely
-Pillow>=9.0.0    # Used widely to render images (PIL package)
+Pillow    # Used widely to render images
 psutil  # Used widely to get the number of CPUs
 pyarrow # For parquet
 pyinstrument    # Used widely as profiler
@@ -40,10 +39,11 @@ tornado  # Used in nuboard.py
 tqdm  # Used widely
 ujson  # Used in serialiation_callback.py
 
-
+torch==2.0.1
+torchvision==0.15.2
 pytorch-lightning==2.2.1
+tensorboard==2.16.2
+protobuf==4.25.3
 
-
+notebook
 timm
-
-
